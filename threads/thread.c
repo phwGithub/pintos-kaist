@@ -69,8 +69,6 @@ static void init_thread (struct thread *, const char *name, int priority);
 static void do_schedule(int status);
 static void schedule (void);
 static tid_t allocate_tid (void);
-static bool thread_cmp_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED);
-static void thread_check_preemption(void);
 
 /* Returns true if T appears to point to a valid thread. */
 #define is_thread(t) ((t) != NULL && (t)->magic == THREAD_MAGIC)
@@ -274,13 +272,66 @@ thread_name (void) {
 	return thread_current ()->name;
 }
 
-/* return true if first elem l is prior to second elem s */
+/* return true if first elem l is prior to secon.0d elem s */
 bool 
-thread_cmp_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED)
-{
+thread_cmp_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED) {
     return list_entry (l, struct thread, elem)->priority > list_entry (s, struct thread, elem)->priority;
 }
 
+/* return true if the priority of donors in thread l is greater than that of s */
+bool
+thread_cmp_donate_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED) {
+	return list_entry (l, struct thread, donors_elem)->priority > list_entry (s, struct thread, donors_elem)->priority;
+}
+
+/* if there are locks in wait on lock in the thread, change lock holder's priorty to cur priority */
+void
+donate_priority (void)
+{
+  int depth;
+  struct thread *cur = thread_current ();
+
+  for (depth = 0; depth < 8; depth++){
+    if (!cur->wait_on_lock) break;
+      struct thread *holder = cur->wait_on_lock->holder;
+      holder->priority = cur->priority;
+      cur = holder;
+  }
+}
+
+/* iterate donors in current thread, find one that has a lock matched with given lock, then remove it from donors */
+void
+remove_with_lock (struct lock *lock)
+{
+  struct list_elem *e;
+  struct thread *cur = thread_current ();
+
+  for (e = list_begin (&cur->donors); e != list_end (&cur->donors); e = list_next (e)){
+    struct thread *t = list_entry (e, struct thread, donors_elem);
+    if (t->wait_on_lock == lock) {
+		list_remove (&t->donors_elem);
+	}
+  }
+}
+
+/* restore current thread's priority with init_priority, then sort donors in descending order with priority
+	if priority of head thread in donors is greater than current thread's priority, then replace it */
+void
+refresh_priority (void)
+{
+  struct thread *cur = thread_current ();
+
+  cur->priority = cur->init_priority;
+  
+  if (!list_empty (&cur->donors)) {
+    list_sort (&cur->donors, thread_cmp_donate_priority, 0);
+
+    struct thread *head = list_entry (list_front (&cur->donors), struct thread, donors_elem);
+    if (head->priority > cur->priority) {
+		cur->priority = head->priority;
+	}
+  }
+}
 
 /* Returns the running thread.
    This is running_thread() plus a couple of sanity checks.
@@ -370,7 +421,7 @@ thread_interrupt (int64_t ticks) {
 
 	while (e != list_end (&sleep_list)){
 		struct thread *t = list_entry (e, struct thread, elem);
-		if (ticks > t->local_ticks){	// 스레드가 일어날 시간이 되었는지 확인
+		if (ticks >= t->local_ticks){	// 스레드가 일어날 시간이 되었는지 확인
 			e = list_remove (e);	// sleep list 에서 제거
 			thread_unblock (t);	// 스레드 unblock
 		}
@@ -383,7 +434,10 @@ thread_interrupt (int64_t ticks) {
 /* Sets the current thread's priority to NEW_PRIORITY. */
 void
 thread_set_priority (int new_priority) {
-	thread_current ()->priority = new_priority;
+	thread_current ()->init_priority = new_priority;
+	
+	/* find the greatest priority in current thread */
+	refresh_priority ();
 
 	/* check if there is a preemption */
 	thread_check_preemption ();
@@ -484,6 +538,9 @@ init_thread (struct thread *t, const char *name, int priority) {
 	t->tf.rsp = (uint64_t) t + PGSIZE - sizeof (void *);
 	t->priority = priority;
 	t->magic = THREAD_MAGIC;
+	t->init_priority = priority;
+	t->wait_on_lock = NULL;
+	list_init(&t->donors);
 }
 
 /* Chooses and returns the next thread to be scheduled.  Should

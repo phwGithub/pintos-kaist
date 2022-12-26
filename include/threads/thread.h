@@ -107,7 +107,13 @@ struct thread {
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
-	int64_t local_ticks;
+	int64_t local_ticks;				/* local ticks to wake up at this ticks */
+	
+	/* for donation matters */
+	int64_t init_priority;				/* save init priority to initialize prioriy after donation */
+	struct lock *wait_on_lock;			/* address of locks that this thread is waiting */
+	struct list donors;					/* list of threads that donated its priority to this thread */
+	struct list_elem donors_elem;		/* list element of donors_list */
 };
 
 /* If false (default), use round-robin scheduler.
@@ -145,5 +151,12 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+bool thread_cmp_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED);
+void thread_check_preemption(void);
+
+bool thread_cmp_donate_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED);
+void remove_with_lock (struct lock *lock);
+void refresh_priority (void);
 
 #endif /* threads/thread.h */
