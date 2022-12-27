@@ -50,6 +50,10 @@ process_create_initd (const char *file_name) {
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
 
+	/* Parse command line and get program name */
+	char *save_ptr;
+	file_name = strtok_r(file_name, " ", &save_ptr);
+
 	/* Create a new thread to execute FILE_NAME. */
 	tid = thread_create (file_name, PRI_DEFAULT, initd, fn_copy);
 	if (tid == TID_ERROR)
@@ -158,6 +162,43 @@ error:
 	thread_exit ();
 }
 
+/* Creates a user stack. 
+ * Input values are ARGument Vector, ARGument Count, and intr_frame -> rsp */
+void
+argument_stack(const char **argv, int argc, void **rsp) {
+	char *ptr = *rsp;
+    uintptr_t ptr_buf[argc];
+	
+	while(argc > 0)
+	{
+		argc--;
+		ptr -= (strlen(argv[argc])*sizeof(char) + 1);
+		memcpy(ptr, argv[argc], (strlen(argv[argc])*sizeof(char) + 1));
+		ptr_buf[argc] = (uintptr_t)ptr;
+	}
+
+	ptr--;
+
+	if((uintptr_t)ptr % 8 != 0)
+	{
+		int padding_size = 8 - ((uintptr_t)ptr % 8);
+		ptr -= padding_size*sizeof(char);
+	}
+
+	ptr -= sizeof(&argv[argc]);
+
+	while(argc > 0)
+	{
+		argc--;
+		ptr -= sizeof(&argv[argc]);
+		memcpy(ptr, &argv[argc], sizeof(&argv[argc]));
+	}
+
+	ptr -= sizeof(void*);
+	memset(ptr, 0, sizeof(void*));
+    *rsp = ptr;
+}
+
 /* Switch the current execution context to the f_name.
  * Returns -1 on fail. */
 int
@@ -204,6 +245,8 @@ process_wait (tid_t child_tid UNUSED) {
 	/* XXX: Hint) The pintos exit if process_wait (initd), we recommend you
 	 * XXX:       to add infinite loop here before
 	 * XXX:       implementing the process_wait. */
+	while(1);
+
 	return -1;
 }
 
@@ -329,6 +372,26 @@ load (const char *file_name, struct intr_frame *if_) {
 	bool success = false;
 	int i;
 
+	/* make variables to insert in user stack */
+	int argc = 0;
+	char **argv = palloc_get_page(0);
+	char *file_name_copy = palloc_get_page(0);
+	strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+
+	char *save_ptr = NULL;
+	char *token = NULL;
+	if (argv == NULL) {
+		goto done;
+	}
+
+	token = strtok_r(file_name_copy, " ", &save_ptr);
+	
+	while(token != NULL) {
+		argv[argc] = token;
+		token = strtok_r(NULL, " ", &save_ptr);
+		argc++;
+	}
+
 	/* Allocate and activate page directory. */
 	t->pml4 = pml4_create ();
 	if (t->pml4 == NULL)
@@ -414,8 +477,13 @@ load (const char *file_name, struct intr_frame *if_) {
 	/* Start address. */
 	if_->rip = ehdr.e_entry;
 
-	/* TODO: Your code goes here.
-	 * TODO: Implement argument passing (see project2/argument_passing.html). */
+	/* push arguments in user stack */
+	/* and intialize rsi and rdi, then call hex_dump() */
+	argument_stack(argv, argc, &(if_->rsp));
+    if_->R.rsi = (uint64_t*)&(if_->rsp) + sizeof(void*);
+    if_->R.rdi = argc;
+	hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
+	palloc_free_page(file_name_copy);
 
 	success = true;
 
