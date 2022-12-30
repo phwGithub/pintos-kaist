@@ -18,6 +18,8 @@
 #include "threads/mmu.h"
 #include "threads/vaddr.h"
 #include "intrinsic.h"
+#include "threads/synch.h"
+#include "lib/user/syscall.h"
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -96,17 +98,16 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	/* Clone current thread to new thread.*/
 	struct thread * parent = thread_current();
 	memcpy(&parent->parent_if, if_, sizeof(struct intr_frame));
-	tid_t pid = thread_create (name, parent->priority, __do_fork, parent);
+	tid_t pid = thread_create (name, PRI_DEFAULT, __do_fork, parent);
 	if(pid == TID_ERROR){
 		return TID_ERROR;
 	}
-
+	
 	struct thread *child = get_child(pid);
 	sema_down(&child->sema_fork);
-
-	if (child->exit_status == -1) {
-		return TID_ERROR;
-	}
+	// if (child->exit_status == -1) {
+	// 	return TID_ERROR;
+	// }
 	
 	return pid;
 }
@@ -124,7 +125,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 
 	/* 1. TODO: If the parent_page is kernel page, then return immediately. */
 	if (is_kernel_vaddr(va)) {
-		return false;
+		return true;
 	}
 	/* 2. Resolve VA from the parent's page map level 4. */
 	parent_page = pml4_get_page (parent->pml4, va);
@@ -134,7 +135,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
 	
 	/* 3. TODO: Allocate new PAL_USER page for the child and set result to
 	 *    TODO: NEWPAGE. */
-	newpage = palloc_get_page(PAL_USER | PAL_ZERO);
+	newpage = palloc_get_page(PAL_USER);
 	if(newpage == NULL) {
 		return false;
 	}
@@ -160,6 +161,7 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  *       this function. */
 static void
 __do_fork (void *aux) {
+	//printf("do_fork entered !!!!!!!!!!!!!!!!!!!!!!!!\n");
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
@@ -181,8 +183,10 @@ __do_fork (void *aux) {
 	if (!supplemental_page_table_copy (&current->spt, &parent->spt))
 		goto error;
 #else
-	if (!pml4_for_each (parent->pml4, duplicate_pte, parent))
+	if (!pml4_for_each (parent->pml4, duplicate_pte, parent)) {
 		goto error;
+	}
+	
 #endif
 
 	/* TODO: Your code goes here.
@@ -192,7 +196,6 @@ __do_fork (void *aux) {
 	 * TODO:       the resources of parent.*/
 	current->fd_table[0] = parent->fd_table[0];
 	current->fd_table[1] = parent->fd_table[1];
-
 	for (int i = 2; i < MAX_FD_NUM; i++) {
 		struct file * f = parent->fd_table[i];
 		if (f == NULL){
@@ -200,10 +203,8 @@ __do_fork (void *aux) {
 		}
 		current->fd_table[i] = file_duplicate(f);
 	}
-	
+	if_.R.rax = 0;
 	sema_up(&current->sema_fork);
-	if_.R.rax = 0; 
-
 	process_init ();
 
 	/* Finally, switch to the newly created process. */

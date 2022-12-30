@@ -200,19 +200,22 @@ thread_create (const char *name, int priority, thread_func *function, void *aux)
 	tid_t tid;
 
 	ASSERT (function != NULL);
-	
+
 	/* Allocate thread. */
 	t = palloc_get_page (PAL_ZERO); 
-	if (t == NULL)
+	if (t == NULL) {
 		return TID_ERROR;
+	}
+		
 
 	/* Initialize thread. */
 	init_thread (t, name, priority);
 	struct  thread *parent = thread_current();
 	list_push_back(&parent->child_list, &t->child_elem);
 	t->fd_table = palloc_get_multiple(PAL_ZERO, FDT_PAGES);
-	if (t->fd_table == NULL)
+	if (t->fd_table == NULL) {
 		return TID_ERROR;
+	}
 
 	tid = t->tid = allocate_tid ();
 
