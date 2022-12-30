@@ -278,8 +278,9 @@ process_exec (void *f_name) {
 
 	/* If load failed, quit. */
 	palloc_free_page (file_name);
-	if (!success)
+	if (!success) {
 		return -1;
+	}
 
 	/* Start switched process. */
 	do_iret (&_if);
@@ -444,9 +445,7 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* make variables to insert in user stack */
 	int argc = 0;
-	char **argv = palloc_get_page(PAL_ZERO);
-	char *file_name_copy = palloc_get_page(PAL_ZERO);
-	strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
+	char *argv[128];
 
 	char *save_ptr = NULL;
 	char *token = NULL;
@@ -454,7 +453,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
-	token = strtok_r(file_name_copy, " ", &save_ptr);
+	token = strtok_r(file_name, " ", &save_ptr);
 	
 	while(token != NULL) {
 		argv[argc] = token;
@@ -557,14 +556,13 @@ load (const char *file_name, struct intr_frame *if_) {
     if_->R.rdi = argc;
 	//hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
 
-	palloc_free_page(file_name_copy);
-
 	success = true;
 
 done:
 	/* We arrive here whether the load is successful or not. */
 	//file_close (file);
 	//process_exit();
+	//palloc_free_page(file_name_copy);
 	return success;
 }
 

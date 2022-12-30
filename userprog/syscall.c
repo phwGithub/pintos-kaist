@@ -65,16 +65,16 @@ fd_to_struct_filep(int fd) {
 
 static int 
 add_file_to_fd_table(struct file *file){
-	int fd = 2;
 	struct thread * current = thread_current();
-	while(current->fd_table[fd] != NULL && fd < MAX_FD_NUM){
-		fd++;
+
+	while(current->fd_table[current->fd_idx] != NULL && current->fd_idx < MAX_FD_NUM){
+		current->fd_idx++;
 	}
-	if(fd >= MAX_FD_NUM){
+	if(current->fd_idx >= MAX_FD_NUM){
 		return -1;
 	}
-	current->fd_table[fd] = file;
-	return fd;
+	current->fd_table[current->fd_idx] = file;
+	return current->fd_idx;
 }
 
 static void 
@@ -195,7 +195,7 @@ filesize(int fd) {
 void
 seek (int fd, unsigned position) {
     struct file *open_file = fd_to_struct_filep(fd);
-    if (open_file == NULL)
+    if (open_file == NULL || open_file == 2)
     {
         return -1;
     }
@@ -241,7 +241,7 @@ read (int fd, void *buffer, unsigned size) {
 	}
 	else {
 		struct file * read_file = fd_to_struct_filep(fd);
-		if(read_file == NULL){
+		if(read_file == NULL || read_file == 2){
 			return -1;
 		}
 		lock_acquire(&filesys_lock);
@@ -267,7 +267,7 @@ write (int fd, const void *buffer, unsigned size){
         return size;
     } else {
 		struct file * write_file = fd_to_struct_filep(fd);
-		if(write_file == NULL){
+		if(write_file == NULL || write_file == 1){
 			return 0;
 		}
 		lock_acquire(&filesys_lock);
@@ -285,20 +285,20 @@ close (int fd){
 		return;
 	}
 
-	if (fd <= 1) {
+	if (fd <= 1 || close_file <= 2) {
 		return;
 	}
 
 	remove_file_from_fd_table(fd);
 
-	lock_acquire(&filesys_lock);
+	//lock_acquire(&filesys_lock);
 	file_close(close_file);
-	lock_release(&filesys_lock);
+	//lock_release(&filesys_lock);
 }
 
 /* The main system call interface */
 void
-syscall_handler (struct intr_frame *f UNUSED) {
+syscall_handler (struct intr_frame *f) {
 	int syscall_num = f->R.rax;
 
 	// a1 = f->R.rdi
