@@ -5,6 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,6 +29,9 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+#define FDT_PAGES 3
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9)
 
 /* A kernel thread or user process.
  *
@@ -98,6 +103,22 @@ struct thread {
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
+
+	/* for system call*/
+	struct file **fd_table; 			/* file descriptor table */ 
+    int fd_idx;               			/* idx of file descriptor opened */
+	int exit_status;					/* exit status for child process */
+
+	struct intr_frame parent_if;		/* intr_frame of parent process */
+
+	struct list child_list;				/* list of child processes */
+	struct list_elem child_elem;		/* list element of child process */
+	struct semaphore sema_fork;			/* semaphore for fork function */
+	struct semaphore sema_wait;			/* semaphore for wait function */
+	struct semaphore sema_free;			/* semaphore for sync parent-child process */
+
+	struct file *running;
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -114,6 +135,7 @@ struct thread {
 	struct lock *wait_on_lock;			/* address of locks that this thread is waiting */
 	struct list donors;					/* list of threads that donated its priority to this thread */
 	struct list_elem donors_elem;		/* list element of donors_list */
+
 };
 
 /* If false (default), use round-robin scheduler.
