@@ -20,6 +20,7 @@
 #include "intrinsic.h"
 #include "threads/synch.h"
 #include "lib/user/syscall.h"
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -63,7 +64,7 @@ process_create_initd (const char *file_name) {
 
 	/* Make a copy of FILE_NAME.
 	 * Otherwise there's a race between the caller and load(). */
-	fn_copy = palloc_get_page (0);
+	fn_copy = palloc_get_page (PAL_ZERO);
 	if (fn_copy == NULL)
 		return TID_ERROR;
 	strlcpy (fn_copy, file_name, PGSIZE);
@@ -161,7 +162,6 @@ duplicate_pte (uint64_t *pte, void *va, void *aux) {
  *       this function. */
 static void
 __do_fork (void *aux) {
-	//printf("do_fork entered !!!!!!!!!!!!!!!!!!!!!!!!\n");
 	struct intr_frame if_;
 	struct thread *parent = (struct thread *) aux;
 	struct thread *current = thread_current ();
@@ -258,6 +258,7 @@ argument_stack(const char **argv, int argc, void **rsp) {
  * Returns -1 on fail. */
 int
 process_exec (void *f_name) {
+	//printf("process");
 	char *file_name = f_name;
 	bool success;
 
@@ -323,10 +324,11 @@ process_exit (void) {
 	}
 	palloc_free_multiple(curr->fd_table, FDT_PAGES);
 	file_close(curr->running);
-	process_cleanup ();
 	
 	sema_up(&curr->sema_wait);
 	sema_down(&curr->sema_free);
+
+	process_cleanup ();
 
 }
 
@@ -442,8 +444,8 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* make variables to insert in user stack */
 	int argc = 0;
-	char **argv = palloc_get_page(0);
-	char *file_name_copy = palloc_get_page(0);
+	char **argv = palloc_get_page(PAL_ZERO);
+	char *file_name_copy = palloc_get_page(PAL_ZERO);
 	strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
 
 	char *save_ptr = NULL;
@@ -473,6 +475,9 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
+	t->running = file;
+	file_deny_write(file);
+	
 	/* Read and verify executable header. */
 	if (file_read (file, &ehdr, sizeof ehdr) != sizeof ehdr
 			|| memcmp (ehdr.e_ident, "\177ELF\2\1\1", 7)
@@ -558,7 +563,8 @@ load (const char *file_name, struct intr_frame *if_) {
 
 done:
 	/* We arrive here whether the load is successful or not. */
-	file_close (file);
+	//file_close (file);
+	//process_exit();
 	return success;
 }
 

@@ -13,6 +13,8 @@
 #include "filesys/filesys.h"
 #include "filesys/file.h"
 #include "userprog/process.h"
+#include "threads/palloc.h"
+#include "filesys/off_t.h"
 
 void syscall_entry (void);
 void syscall_handler (struct intr_frame *);
@@ -119,7 +121,7 @@ exec(char *file_name) {
 	char *fn_copy;
 	
 	int size = strlen(file_name) + 1;
-	fn_copy = palloc_get_page(0);
+	fn_copy = palloc_get_page(PAL_ZERO);
 	if (fn_copy == NULL) {
 		exit(-1);
 	}
@@ -288,7 +290,7 @@ close (int fd){
 	}
 
 	remove_file_from_fd_table(fd);
-	
+
 	lock_acquire(&filesys_lock);
 	file_close(close_file);
 	lock_release(&filesys_lock);
