@@ -33,7 +33,7 @@ void syscall_handler (struct intr_frame *);
 #define MSR_SYSCALL_MASK 0xc0000084 /* Mask for the eflags */
 #define	STDIN_FILENO	0
 #define	STDOUT_FILENO	1
-#define MAX_FD_NUM		(1<<9)
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9)
 
 static struct lock filesys_lock;
 
@@ -56,7 +56,7 @@ syscall_init (void) {
 
 static struct file *
 fd_to_struct_filep(int fd) {
-	if (fd < 0 || fd >= MAX_FD_NUM){
+	if (fd < 0 || fd >= FDCOUNT_LIMIT){
 		return NULL;
 	}
 	struct thread * current = thread_current();
@@ -67,10 +67,10 @@ static int
 add_file_to_fd_table(struct file *file){
 	struct thread * current = thread_current();
 
-	while(current->fd_table[current->fd_idx] != NULL && current->fd_idx < MAX_FD_NUM){
+	while(current->fd_table[current->fd_idx] != NULL && current->fd_idx < FDCOUNT_LIMIT){
 		current->fd_idx++;
 	}
-	if(current->fd_idx >= MAX_FD_NUM){
+	if(current->fd_idx >= FDCOUNT_LIMIT){
 		return -1;
 	}
 	current->fd_table[current->fd_idx] = file;
@@ -80,7 +80,7 @@ add_file_to_fd_table(struct file *file){
 static void 
 remove_file_from_fd_table(int fd){
 	struct thread * current = thread_current();
-	if (fd < 0 || fd >= MAX_FD_NUM){
+	if (fd < 0 || fd >= FDCOUNT_LIMIT){
 		return;
 	}	
 	current->fd_table[fd] = NULL;

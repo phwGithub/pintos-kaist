@@ -106,9 +106,9 @@ process_fork (const char *name, struct intr_frame *if_ UNUSED) {
 	
 	struct thread *child = get_child(pid);
 	sema_down(&child->sema_fork);
-	// if (child->exit_status == -1) {
-	// 	return TID_ERROR;
-	// }
+	if (child->exit_status == -1) {
+		return TID_ERROR;
+	}
 	
 	return pid;
 }
@@ -194,18 +194,24 @@ __do_fork (void *aux) {
 	 * TODO:       in include/filesys/file.h. Note that parent should not return
 	 * TODO:       from the fork() until this function successfully duplicates
 	 * TODO:       the resources of parent.*/
+	if (parent->fd_idx == FDCOUNT_LIMIT){
+		goto error;
+	}
+
 	current->fd_table[0] = parent->fd_table[0];
 	current->fd_table[1] = parent->fd_table[1];
-	for (int i = 2; i < MAX_FD_NUM; i++) {
+	for (int i = 2; i < FDCOUNT_LIMIT; i++) {
 		struct file * f = parent->fd_table[i];
 		if (f == NULL){
 			continue;
 		}
 		current->fd_table[i] = file_duplicate(f);
 	}
-	if_.R.rax = 0;
+	current->fd_idx = parent->fd_idx;
+	current->running = file_reopen(parent->running);
 	sema_up(&current->sema_fork);
-	process_init ();
+	if_.R.rax = 0;
+	// process_init ();
 
 	/* Finally, switch to the newly created process. */
 	if (succ)
@@ -445,7 +451,9 @@ load (const char *file_name, struct intr_frame *if_) {
 
 	/* make variables to insert in user stack */
 	int argc = 0;
-	char *argv[128];
+	char **argv = palloc_get_page(PAL_ZERO);
+	char *file_name_copy = palloc_get_page(PAL_ZERO);
+	strlcpy(file_name_copy, file_name, strlen(file_name) + 1);
 
 	char *save_ptr = NULL;
 	char *token = NULL;
@@ -453,7 +461,7 @@ load (const char *file_name, struct intr_frame *if_) {
 		goto done;
 	}
 
-	token = strtok_r(file_name, " ", &save_ptr);
+	token = strtok_r(file_name_copy, " ", &save_ptr);
 	
 	while(token != NULL) {
 		argv[argc] = token;
@@ -555,6 +563,9 @@ load (const char *file_name, struct intr_frame *if_) {
     if_->R.rsi = (uint64_t)(if_->rsp) + sizeof(void*);
     if_->R.rdi = argc;
 	//hex_dump(if_->rsp, if_->rsp, USER_STACK - if_->rsp, true);
+
+	palloc_free_page(file_name_copy);
+	palloc_free_page(argv);
 
 	success = true;
 
