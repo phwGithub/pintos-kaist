@@ -5,6 +5,8 @@
 #include <list.h>
 #include <stdint.h>
 #include "threads/interrupt.h"
+#include "threads/synch.h"
+
 #ifdef VM
 #include "vm/vm.h"
 #endif
@@ -27,6 +29,9 @@ typedef int tid_t;
 #define PRI_MIN 0                       /* Lowest priority. */
 #define PRI_DEFAULT 31                  /* Default priority. */
 #define PRI_MAX 63                      /* Highest priority. */
+
+#define FDT_PAGES 5
+#define FDCOUNT_LIMIT FDT_PAGES *(1 << 9)
 
 /* A kernel thread or user process.
  *
@@ -98,6 +103,22 @@ struct thread {
 #ifdef USERPROG
 	/* Owned by userprog/process.c. */
 	uint64_t *pml4;                     /* Page map level 4 */
+
+	/* for system call*/
+	struct file **fd_table; 			/* file descriptor table */ 
+    int fd_idx;               			/* idx of file descriptor opened */
+	int exit_status;					/* exit status for child process */
+
+	struct intr_frame parent_if;		/* intr_frame of parent process */
+
+	struct list child_list;				/* list of child processes */
+	struct list_elem child_elem;		/* list element of child process */
+	struct semaphore sema_fork;			/* semaphore for fork function */
+	struct semaphore sema_wait;			/* semaphore for wait function */
+	struct semaphore sema_free;			/* semaphore for sync parent-child process */
+
+	struct file *running;
+
 #endif
 #ifdef VM
 	/* Table for whole virtual memory owned by thread. */
@@ -107,6 +128,14 @@ struct thread {
 	/* Owned by thread.c. */
 	struct intr_frame tf;               /* Information for switching */
 	unsigned magic;                     /* Detects stack overflow. */
+	int64_t local_ticks;				/* local ticks to wake up at this ticks */
+	
+	/* for donation matters */
+	int64_t init_priority;				/* save init priority to initialize prioriy after donation */
+	struct lock *wait_on_lock;			/* address of locks that this thread is waiting */
+	struct list donors;					/* list of threads that donated its priority to this thread */
+	struct list_elem donors_elem;		/* list element of donors_list */
+
 };
 
 /* If false (default), use round-robin scheduler.
@@ -132,6 +161,8 @@ const char *thread_name (void);
 
 void thread_exit (void) NO_RETURN;
 void thread_yield (void);
+void thread_sleep (int64_t ticks);
+void thread_interrupt(int64_t ticks);
 
 int thread_get_priority (void);
 void thread_set_priority (int);
@@ -142,5 +173,12 @@ int thread_get_recent_cpu (void);
 int thread_get_load_avg (void);
 
 void do_iret (struct intr_frame *tf);
+
+bool thread_cmp_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED);
+void thread_check_preemption(void);
+
+bool thread_cmp_donate_priority (struct list_elem *l, struct list_elem *s, void *aux UNUSED);
+void remove_with_lock (struct lock *lock);
+void refresh_priority (void);
 
 #endif /* threads/thread.h */

@@ -395,7 +395,6 @@ list_sort (struct list *list, list_less_func *less, void *aux) {
 		for (a0 = list_begin (list); a0 != list_end (list); a0 = b1) {
 			/* Each iteration produces one output run. */
 			output_run_cnt++;
-
 			/* Locate two adjacent runs of nondecreasing elements
 			   A0...A1B0 and A1B0...B1. */
 			a1b0 = find_end_of_run (a0, list_end (list), less, aux);
@@ -424,9 +423,11 @@ list_insert_ordered (struct list *list, struct list_elem *elem,
 	ASSERT (elem != NULL);
 	ASSERT (less != NULL);
 
-	for (e = list_begin (list); e != list_end (list); e = list_next (e))
+	for (e = list_begin (list); e != list_end (list); e = list_next (e)) {
 		if (less (elem, e, aux))
 			break;
+	}
+	
 	return list_insert (e, elem);
 }
 
